@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Accident Detection</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: rgba(255,255,255,0.08);
+    --accent: #e63946;
+    --safe: #2ec4b6;
+    --text: #f0f0f0;
+    --muted: rgba(255,255,255,0.4);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 20px;
+    background-image: radial-gradient(ellipse at 50% 0%, rgba(230,57,70,0.12) 0%, transparent 60%);
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    border: 1px solid rgba(230,57,70,0.4);
+    padding: 4px 12px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 800;
+    letter-spacing: -1px;
+    line-height: 1.1;
+  }
+
+  h1 span { color: var(--accent); }
+
+  .subtitle {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    width: 100%;
+    max-width: 520px;
+  }
+
+  /* Model status bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #555;
+    transition: background 0.4s;
+    flex-shrink: 0;
+  }
+  .dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
+  .dot.ready { background: var(--safe); }
+  .dot.error { background: var(--accent); }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 1.5px dashed rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 40px 20px;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone:hover {
+    border-color: rgba(230,57,70,0.5);
+    background: rgba(230,57,70,0.04);
+  }
+
+  .upload-zone.has-image { padding: 0; border-style: solid; border-color: var(--border); }
+
+  .upload-icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .upload-label {
+    font-size: 14px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .upload-label strong {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  #preview {
+    width: 100%;
+    max-height: 280px;
+    object-fit: cover;
+    border-radius: 10px;
+    display: none;
+  }
+
+  /* Analyze button */
+  .btn {
+    width: 100%;
+    margin-top: 16px;
+    padding: 14px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn:hover { opacity: 0.9; }
+  .btn:active { transform: scale(0.99); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn.loading-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+    animation: shimmer 1.2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  /* Result */
+  #result {
+    margin-top: 20px;
+    border-radius: 10px;
+    padding: 20px;
+    display: none;
+    text-align: center;
+    animation: fadeUp 0.4s ease;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  #result.accident {
+    background: rgba(230,57,70,0.1);
+    border: 1px solid rgba(230,57,70,0.3);
+  }
+
+  #result.safe {
+    background: rgba(46,196,182,0.1);
+    border: 1px solid rgba(46,196,182,0.3);
+  }
+
+  .result-emoji { font-size: 36px; display: block; margin-bottom: 8px; }
+  .result-label { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+  .result-score {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    margin-top: 6px;
+    opacity: 0.6;
+  }
+
+  .result.accident .result-label { color: var(--accent); }
+  .result.safe .result-label { color: var(--safe); }
+
+  /* No model warning */
+  .no-model-warning {
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.25);
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: #f59e0b;
+    line-height: 1.7;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">Computer Vision</div>
+  <h1>Accident<br><span>Detection</span></h1>
+  <p class="subtitle">// powered by TensorFlow.js</p>
+</header>
+
+<div class="card">
+
+  <div class="status-bar">
+    <div class="dot loading" id="statusDot"></div>
+    <span id="statusText">Loading model...</span>
+  </div>
+
+  <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+    <span class="upload-icon">📷</span>
+    <p class="upload-label"><strong>Click to upload</strong> an image</p>
+    <p class="upload-label" style="margin-top:6px; font-size:11px;">JPG, PNG, WEBP supported</p>
+    <input type="file" id="fileInput" hidden accept="image/*" onchange="previewImage(event)">
+  </div>
+
+  <img id="preview" alt="Preview">
+
+  <button class="btn" id="analyzeBtn" onclick="detectAccident()" disabled>
+    Analyze Image
+  </button>
+
+  <div class="no-model-warning" id="noModelWarn">
+    ⚠ No model loaded. Make sure <code>model/model.json</code> exists in the same folder as this HTML file, along with the weight files. Open browser DevTools → Console for details.
+  </div>
+
+  <div id="result">
+    <span class="result-emoji" id="resultEmoji"></span>
+    <div class="result-label" id="resultLabel"></div>
+    <div class="result-score" id="resultScore"></div>
+  </div>
+
+</div>
+
+<script>
+let model = null;
+let imageReady = false;
+
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const noModelWarn = document.getElementById('noModelWarn');
+
+async function loadModel() {
+  try {
+    model = await tf.loadLayersModel('model/model.json');
+    statusDot.className = 'dot ready';
+    statusText.textContent = 'Model ready';
+    if (imageReady) analyzeBtn.disabled = false;
+  } catch (err) {
+    console.error('Model load error:', err);
+    statusDot.className = 'dot error';
+    statusText.textContent = 'Model failed to load';
+    noModelWarn.style.display = 'block';
+  }
+}
+
+loadModel();
+
+function previewImage(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = document.getElementById('preview');
+    const zone = document.getElementById('uploadZone');
+    img.src = e.target.result;
+    img.style.display = 'block';
+    zone.classList.add('has-image');
+    imageReady = true;
+    if (model) analyzeBtn.disabled = false;
+    document.getElementById('result').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function detectAccident() {
+  const imgElement = document.getElementById('preview');
+  const result = document.getElementById('result');
+
+  if (!model) { noModelWarn.style.display = 'block'; return; }
+  if (!imageReady) { alert('Please upload an image first.'); return; }
+
+  analyzeBtn.disabled = true;
+  analyzeBtn.textContent = 'Analyzing...';
+  analyzeBtn.classList.add('loading-btn');
+  result.style.display = 'none';
+
+  try {
+    // FIX: use imgElement directly — no need for a new Image()
+    const tensor = tf.browser.fromPixels(imgElement)
+      .resizeNearestNeighbor([224, 224])
+      .toFloat()
+      .div(255.0)
+      .expandDims();
+
+    const predData = await model.predict(tensor).data();
+    tensor.dispose();
+
+    const score = predData[0];
+    const pct = (score * 100).toFixed(1);
+
+    result.style.display = 'block';
+
+    if (score > 0.5) {
+      result.className = 'accident';
+      document.getElementById('resultEmoji').textContent = '🚨';
+      document.getElementById('resultLabel').textContent = 'Accident Detected';
+      document.getElementById('resultScore').textContent = `confidence: ${pct}%`;
+    } else {
+      result.className = 'safe';
+      document.getElementById('resultEmoji').textContent = '✅';
+      document.getElementById('resultLabel').textContent = 'No Accident';
+      document.getElementById('resultScore').textContent = `confidence: ${(100 - score * 100).toFixed(1)}%`;
+    }
+  } catch (err) {
+    console.error('Prediction error:', err);
+    alert('Prediction failed. See console for details.');
+  } finally {
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = 'Analyze Image';
+    analyzeBtn.classList.remove('loading-btn');
+  }
+}
+</script>
+</body>
+</html>
