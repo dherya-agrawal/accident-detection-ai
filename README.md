@@ -60,7 +60,7 @@ accident-detection-ai/
 
 ## 🚀 Live Demo
 
-👉 https://your-project-link.vercel.app
+👉 https://accident-detection-ai-tkfa.vercel.app
 
 ---
 
